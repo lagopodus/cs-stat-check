@@ -6,16 +6,17 @@ read from the path segment, so each player can have their own shareable URL with
 
 ## Configuration
 
-1. Create a `.env` file (or configure your deployment secrets) with the following values:
+1. The app now points to Leetify's public profile endpoint (`https://api-public.cs-prod.leetify.com/v3/profile`) and
+   automatically appends the `steam64_id` query string, so **no API key is required**. If you proxy through your own service or
+   need to customize the request, create a `.env` file (or configure your deployment secrets) with the following optional value:
 
    ```bash
-   REACT_APP_LEETIFY_API_KEY=<optional-api-key>
-   REACT_APP_LEETIFY_API_URL=https://api.leetify.com/api/stats/users
+   REACT_APP_LEETIFY_API_URL=https://api-public.cs-prod.leetify.com/v3/profile?steam64_id={steamId}
    ```
 
-   `REACT_APP_LEETIFY_API_KEY` is only required if your Leetify workspace enforces authentication. If your
-   endpoint differs from the default, update `REACT_APP_LEETIFY_API_URL`. You can use `{steamId}` inside this
-   URL to control where the Steam ID is interpolated.
+   The `{steamId}` placeholder will be replaced automatically. If you omit it, the app will append `?steam64_id=` (or `&steam64_id=`
+   if a query string already exists) to the provided URL. You can still supply `REACT_APP_LEETIFY_API_KEY` if your endpoint requires
+   one, but it is not needed for the default public API.
 
 2. Run `npm run build` and deploy the `build` folder to GitHub Pages.
 3. Share URLs like `https://example.com/76561198000000000` to dynamically fetch stats for that Steam account.

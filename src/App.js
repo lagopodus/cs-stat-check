@@ -80,14 +80,17 @@ const extractMatches = (payload) => {
 const buildLeetifyUrl = (steamId) => {
   if (!steamId) return null;
   const configured = (process.env.REACT_APP_LEETIFY_API_URL || '').trim();
+  const encode = encodeURIComponent;
   if (configured) {
     if (configured.includes('{steamId}')) {
       return configured.replace('{steamId}', steamId);
     }
-    const normalized = configured.replace(/\/$/, '');
-    return `${normalized}/${steamId}`;
+    const hasQuery = configured.includes('?');
+    const needsAmpersand = hasQuery && !configured.endsWith('?') && !configured.endsWith('&');
+    const separator = hasQuery ? (needsAmpersand ? '&' : '') : '?';
+    return `${configured}${separator}steam64_id=${encode(steamId)}`;
   }
-  return `https://api.leetify.com/api/stats/users/${steamId}`;
+  return `https://api-public.cs-prod.leetify.com/v3/profile?steam64_id=${encode(steamId)}`;
 };
 
 function App() {
@@ -226,8 +229,8 @@ function App() {
         <section className="panel error">
           <p>{error}</p>
           <p>
-            Make sure your <code>REACT_APP_LEETIFY_API_KEY</code> (if required) is configured for the build and that the Steam ID is
-            valid.
+            Make sure the Steam ID is valid and, if you are proxying through your own endpoint, that any required credentials are
+            configured for the build.
           </p>
         </section>
       )}
