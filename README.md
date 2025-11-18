@@ -4,6 +4,15 @@ The app lets you deploy a lightweight React frontend to GitHub Pages (or any sta
 load CS player stats from the Leetify API simply by visiting `https://<your-domain>/<steamId>`. The Steam ID is
 read from the path segment, so each player can have their own shareable URL without configuring routes.
 
+## What the page shows
+
+* Privacy mode, win rate, match volume, and first-tracked date so you can quickly verify how long an account has existed.
+* Ban summary badges and an automated "cheat radar" with heuristics for win rate spikes, aim scores, reaction times, and
+  suspicious headshot percentages.
+* Leetify skill ratings, CS2 Premier/Faceit/Wingman ranks, and a per-map table for competitive ranks.
+* Raw mechanical/utility stats (flash effectiveness, opening duels, trading success, etc.) plus the raw API payload for deep
+  dives.
+
 ## Configuration
 
 1. The app now points to Leetify's public profile endpoint (`https://api-public.cs-prod.leetify.com/v3/profile`) and

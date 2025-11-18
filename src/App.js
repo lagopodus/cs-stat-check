@@ -1,14 +1,113 @@
 import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 
-const SUMMARY_FIELDS = [
-  { label: 'Leetify Rating', paths: [['leetifyRating'], ['stats', 'leetifyRating'], ['overall', 'leetifyRating']] },
-  { label: 'K/D Ratio', paths: [['kdRatio'], ['stats', 'kdRatio'], ['lifetime', 'kdRatio'], ['stats', 'kd']] },
-  { label: 'Win %', paths: [['winRate'], ['stats', 'winRate'], ['lifetime', 'winRate']] },
-  { label: 'HS %', paths: [['headshotPercentage'], ['stats', 'headshotPercentage'], ['stats', 'hsPercent']] },
-  { label: 'ADR', paths: [['adr'], ['stats', 'adr'], ['lifetime', 'adr']] },
-  { label: 'Matches Played', paths: [['matches'], ['stats', 'matches'], ['lifetime', 'matchesPlayed']] },
-];
+const friendlyLabel = (key = '') =>
+  key
+    .replace(/_/g, ' ')
+    .replace(/\bct\b/gi, 'CT')
+    .replace(/\bt\b/gi, 'T')
+    .replace(/\bcs\b/gi, 'CS')
+    .replace(/\bleetify\b/i, 'Leetify')
+    .replace(/\belo\b/i, 'ELO')
+    .replace(/\b([a-z])(\w*)/gi, (_, first, rest) => `${first.toUpperCase()}${rest.toLowerCase()}`)
+    .trim();
+
+const formatPercent = (value) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  return `${value.toFixed(1)}%`;
+};
+
+const formatRatioPercent = (ratio) => {
+  if (ratio === null || ratio === undefined) return '—';
+  return formatPercent(ratio * 100);
+};
+
+const formatNumber = (value) => {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'number') return value.toLocaleString();
+  return value;
+};
+
+const formatDate = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const buildIntegritySignals = (playerData) => {
+  if (!playerData) return [];
+  const signals = [];
+
+  if (typeof playerData.winrate === 'number') {
+    const winPercent = playerData.winrate * 100;
+    let status = 'safe';
+    let detail = 'Within normal win patterns.';
+    if (winPercent >= 70) {
+      status = 'alert';
+      detail = 'Extremely high winrate. Review POVs/demos.';
+    } else if (winPercent >= 60) {
+      status = 'watch';
+      detail = 'Above average winrate. Keep an eye on consistency.';
+    }
+    signals.push({ label: 'Winrate', value: formatPercent(winPercent), status, detail });
+  }
+
+  const aim = playerData.rating?.aim;
+  if (typeof aim === 'number') {
+    let status = 'safe';
+    let detail = 'Tracking looks human.';
+    if (aim >= 75) {
+      status = 'watch';
+      detail = 'Very strong mechanical aim.';
+    }
+    if (aim >= 85) {
+      status = 'alert';
+      detail = 'Pro-level aim spikes. Check for suspicious vods.';
+    }
+    signals.push({ label: 'Aim rating', value: aim.toFixed(1), status, detail });
+  }
+
+  const reaction = playerData.stats?.reaction_time_ms;
+  if (typeof reaction === 'number') {
+    let status = 'safe';
+    let detail = 'Reaction time is realistic.';
+    if (reaction <= 250) {
+      status = 'watch';
+      detail = 'Unusually fast reactions. Compare across matches.';
+    }
+    if (reaction <= 200) {
+      status = 'alert';
+      detail = 'Borderline impossible reaction speed.';
+    }
+    signals.push({ label: 'Reaction time', value: `${reaction.toFixed(0)} ms`, status, detail });
+  }
+
+  const headAccuracy = playerData.stats?.accuracy_head;
+  if (typeof headAccuracy === 'number') {
+    let status = 'safe';
+    let detail = 'Headshot ratio in expected range.';
+    if (headAccuracy >= 30) {
+      status = 'watch';
+      detail = 'High headshot rate—check rifle rounds.';
+    }
+    if (headAccuracy >= 45) {
+      status = 'alert';
+      detail = 'Headshot rate far above average.';
+    }
+    signals.push({ label: 'Head accuracy', value: formatPercent(headAccuracy), status, detail });
+  }
+
+  const bans = Array.isArray(playerData.bans) ? playerData.bans.length : 0;
+  signals.push({
+    label: 'Ban history',
+    value: bans ? `${bans} ban${bans > 1 ? 's' : ''}` : 'Clean',
+    status: bans ? 'alert' : 'safe',
+    detail: bans ? 'Existing bans are a huge red flag.' : 'No bans reported by Leetify.',
+  });
+
+  return signals;
+};
 
 const ensurePath = (value = '') => {
   if (!value) return '';
@@ -148,22 +247,10 @@ function App() {
     return () => controller.abort();
   }, [activeSteamId]);
 
-  const summaryStats = useMemo(() => {
-    if (!playerData) return [];
-    return SUMMARY_FIELDS.map((field) => {
-      const value = findValue(playerData, field.paths);
-      if (value === undefined || value === null) return null;
-      const formattedValue = typeof value === 'number' ? value.toFixed(2).replace(/\.00$/, '') : value;
-      return {
-        label: field.label,
-        value: formattedValue,
-      };
-    }).filter(Boolean);
-  }, [playerData]);
-
   const playerName = useMemo(
     () =>
       findValue(playerData, [
+        ['name'],
         ['player', 'name'],
         ['player', 'nickname'],
         ['profile', 'name'],
@@ -178,6 +265,95 @@ function App() {
     return recentMatches.slice(0, 5);
   }, [recentMatches]);
 
+  const overviewMetrics = useMemo(() => {
+    if (!playerData) return [];
+    const metrics = [
+      { label: 'Privacy mode', value: friendlyLabel(playerData.privacy_mode) || '—' },
+      { label: 'Win rate', value: formatRatioPercent(playerData.winrate) },
+      { label: 'Matches tracked', value: formatNumber(playerData.total_matches) },
+      { label: 'First tracked match', value: formatDate(playerData.first_match_date) },
+      { label: 'Steam ID', value: playerData.steam64_id || activeSteamId },
+      { label: 'Leetify profile ID', value: playerData.id },
+    ];
+    return metrics.filter((metric) => metric.value !== undefined && metric.value !== null && metric.value !== '—' && metric.value !== '');
+  }, [playerData, activeSteamId]);
+
+  const ratingMetrics = useMemo(() => {
+    if (!playerData || !playerData.rating) return [];
+    const order = ['aim', 'positioning', 'utility', 'clutch', 'opening', 'ct_leetify', 't_leetify'];
+    const metrics = order
+      .filter((key) => playerData.rating[key] !== undefined)
+      .map((key) => ({ label: friendlyLabel(key), value: playerData.rating[key].toFixed(2) }));
+    const remaining = Object.entries(playerData.rating)
+      .filter(([key]) => !order.includes(key))
+      .map(([key, value]) => ({ label: friendlyLabel(key), value: typeof value === 'number' ? value.toFixed(2) : value }));
+    return [...metrics, ...remaining];
+  }, [playerData]);
+
+  const statMetrics = useMemo(() => {
+    if (!playerData || !playerData.stats) return [];
+    const keys = [
+      'accuracy_enemy_spotted',
+      'accuracy_head',
+      'spray_accuracy',
+      'preaim',
+      'reaction_time_ms',
+      'counter_strafing_good_shots_ratio',
+      'flashbang_hit_foe_per_flashbang',
+      'flashbang_hit_friend_per_flashbang',
+      'flashbang_leading_to_kill',
+      'he_foes_damage_avg',
+      'he_friends_damage_avg',
+      'utility_on_death_avg',
+      'trade_kill_opportunities_per_round',
+      'trade_kills_success_percentage',
+      'traded_deaths_success_percentage',
+      'ct_opening_aggression_success_rate',
+      'ct_opening_duel_success_percentage',
+      't_opening_aggression_success_rate',
+      't_opening_duel_success_percentage',
+    ];
+    return keys
+      .filter((key) => playerData.stats[key] !== undefined)
+      .map((key) => {
+        const rawValue = playerData.stats[key];
+        const isPercentage = /percentage|rate|ratio|accuracy|per_round|per_flashbang/i.test(key);
+        let value;
+        if (typeof rawValue === 'number') {
+          if (/(_ms)$/i.test(key)) {
+            value = `${rawValue.toFixed(0)} ms`;
+          } else if (isPercentage) {
+            value = formatPercent(rawValue);
+          } else {
+            value = rawValue.toFixed(3).replace(/\.000$/, '');
+          }
+        } else {
+          value = rawValue;
+        }
+        return { label: friendlyLabel(key), value };
+      });
+  }, [playerData]);
+
+  const rankMetrics = useMemo(() => {
+    if (!playerData || !playerData.ranks) return [];
+    const rankKeys = ['leetify', 'premier', 'faceit', 'faceit_elo', 'wingman', 'renown'];
+    return rankKeys
+      .filter((key) => playerData.ranks[key] !== undefined)
+      .map((key) => ({ label: friendlyLabel(key), value: formatNumber(playerData.ranks[key]) }));
+  }, [playerData]);
+
+  const mapRanks = useMemo(() => {
+    if (!playerData || !Array.isArray(playerData.ranks?.competitive)) return [];
+    return playerData.ranks.competitive.filter((item) => item.map_name);
+  }, [playerData]);
+
+  const integritySignals = useMemo(() => buildIntegritySignals(playerData), [playerData]);
+
+  const bans = useMemo(() => ({
+    list: Array.isArray(playerData?.bans) ? playerData.bans : [],
+    count: Array.isArray(playerData?.bans) ? playerData.bans.length : 0,
+  }), [playerData]);
+
   const handleSubmit = (event) => {
     event.preventDefault();
     const trimmed = steamIdInput.trim();
@@ -189,10 +365,10 @@ function App() {
       <header className="hero">
         <div>
           <p className="eyebrow">Leetify API powered</p>
-          <h1>Steam player lookup</h1>
+          <h1>Steam integrity scanner</h1>
           <p>
-            Deploy this page to GitHub Pages (or any static host) and open{' '}
-            <code>https://&lt;your-domain&gt;/STEAM_ID</code> to instantly load stats for that Steam user.
+            Drop a Steam ID in the URL (<code>/{'{steam64_id}'}</code>) and we will pull every public Leetify signal so you can
+            spot suspicious performance spikes before queueing.
           </p>
         </div>
       </header>
@@ -214,7 +390,8 @@ function App() {
             </button>
           </div>
           <p className="help-text">
-            Tip: navigate straight to <code>/{'{steamId}'}</code> after deploying and the page will fetch automatically.
+            Tip: navigate straight to <code>/{'{steamId}'}</code> after deploying and the page will fetch automatically so you
+            can share "is this guy legit?" links.
           </p>
         </form>
       </section>
@@ -242,30 +419,130 @@ function App() {
       )}
 
       {playerData && !loading && !error && (
-        <section className="panel stats">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Player overview</p>
-              <h2>{playerName}</h2>
-              <p className="steam-link">
-                Steam ID: <code>{activeSteamId}</code>
-              </p>
+        <>
+          <section className="panel stats overview">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Player overview</p>
+                <h2>{playerName}</h2>
+                <p className="steam-link">
+                  Steam ID: <code>{playerData.steam64_id || activeSteamId}</code>
+                </p>
+              </div>
+              {playerData.privacy_mode && <span className="pill neutral">{friendlyLabel(playerData.privacy_mode)}</span>}
             </div>
-          </div>
 
-          {summaryStats.length > 0 ? (
-            <div className="stat-grid">
-              {summaryStats.map((stat) => (
-                <div key={stat.label} className="stat-card">
-                  <p className="stat-label">{stat.label}</p>
-                  <p className="stat-value">{stat.value}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">No summary metrics available in the API response.</p>
+            {overviewMetrics.length > 0 ? (
+              <div className="metric-grid">
+                {overviewMetrics.map((metric) => (
+                  <div key={metric.label} className="metric-card">
+                    <p className="metric-label">{metric.label}</p>
+                    <p className="metric-value">{metric.value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No overview metrics available in the API response.</p>
+            )}
+          </section>
+
+          <section className={`panel bans ${bans.count ? 'alert' : 'success'}`}>
+            <p className="eyebrow">Ban check</p>
+            {bans.count ? (
+              <div>
+                <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
+                <p>Review the raw payload below for ban details before trusting this account.</p>
+              </div>
+            ) : (
+              <div>
+                <h3>No bans detected</h3>
+                <p>Leetify has not flagged this account with VAC, game, or third-party bans.</p>
+              </div>
+            )}
+          </section>
+
+          {integritySignals.length > 0 && (
+            <section className="panel integrity">
+              <p className="eyebrow">Cheat radar</p>
+              <p className="muted">Automated heuristics to highlight suspicious trends.</p>
+              <div className="signal-grid">
+                {integritySignals.map((signal) => (
+                  <div key={signal.label} className={`signal-card ${signal.status}`}>
+                    <p className="metric-label">{signal.label}</p>
+                    <p className="metric-value">{signal.value}</p>
+                    <p className="signal-detail">{signal.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
-        </section>
+
+          {rankMetrics.length > 0 && (
+            <section className="panel ranks">
+              <p className="eyebrow">Global ranks</p>
+              <div className="metric-grid">
+                {rankMetrics.map((rank) => (
+                  <div key={rank.label} className="metric-card">
+                    <p className="metric-label">{rank.label}</p>
+                    <p className="metric-value">{rank.value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {mapRanks.length > 0 && (
+            <section className="panel map-ranks">
+              <p className="eyebrow">Per-map competitive ranks</p>
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Map</th>
+                      <th>Rank</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mapRanks.map((map) => (
+                      <tr key={map.map_name}>
+                        <td>{friendlyLabel(map.map_name)}</td>
+                        <td>{map.rank ? formatNumber(map.rank) : 'Unranked'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {ratingMetrics.length > 0 && (
+            <section className="panel ratings">
+              <p className="eyebrow">Skill ratings</p>
+              <div className="metric-grid">
+                {ratingMetrics.map((metric) => (
+                  <div key={metric.label} className="metric-card">
+                    <p className="metric-label">{metric.label}</p>
+                    <p className="metric-value">{metric.value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {statMetrics.length > 0 && (
+            <section className="panel stats-grid">
+              <p className="eyebrow">Utility & behavior stats</p>
+              <div className="metric-grid dense">
+                {statMetrics.map((metric) => (
+                  <div key={metric.label} className="metric-card compact">
+                    <p className="metric-label">{metric.label}</p>
+                    <p className="metric-value">{metric.value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {matchesToDisplay.length > 0 && (
