@@ -7,8 +7,10 @@ read from the path segment, so each player can have their own shareable URL with
 ## What the page shows
 
 * Privacy mode, win rate, match volume, and first-tracked date so you can quickly verify how long an account has existed.
-* A cheat radar that now leads the page with a "sus-meter" progress bar on every heuristic so the spiciest stats surface first.
-* Ban summary badges that reinforce the radar signals plus an expandable mechanical breakdown for precise aim/utility stats.
+* A cheat radar that now leads the page with color-coded sus-meters (green/yellow/red) and an overall susiness bar so risky stats
+  jump out immediately.
+* Winrate, aim-vs-Faceit, head accuracy, and reaction-time heuristics that power the sus-meters, alongside a ban summary card and
+  an expandable mechanical breakdown for precise aim/utility stats.
 * Leetify skill ratings, CS2 Premier/Faceit/Wingman ranks, and a per-map table for competitive ranks.
 * Raw mechanical/utility stats (flash effectiveness, opening duels, trading success, etc.) that can stay collapsed until you
   click "Show breakdown," plus the raw API payload for deep dives.

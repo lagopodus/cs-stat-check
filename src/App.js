@@ -35,91 +35,94 @@ const formatDate = (value) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-const severityScores = { safe: 20, watch: 60, alert: 95 };
-const getSusScore = (status, overrides = {}) => {
-  const base = severityScores[status] ?? 50;
-  if (overrides.max) return Math.min(overrides.max, base);
-  if (overrides.min) return Math.max(overrides.min, base);
-  if (overrides.value !== undefined) return overrides.value;
-  return base;
-};
+const severityScores = { safe: 25, watch: 60, alert: 90 };
+const clampScore = (value) => Math.max(0, Math.min(100, value));
 
 const buildIntegritySignals = (playerData) => {
   if (!playerData) return [];
   const signals = [];
-  const pushSignal = (payload) => signals.push({ ...payload, susScore: getSusScore(payload.status, payload.susScoreOverrides) });
+  const pushSignal = (payload) => {
+    const baseScore = payload.susScore ?? severityScores[payload.status] ?? 50;
+    signals.push({ ...payload, susScore: clampScore(baseScore) });
+  };
+
+  const parsedFaceit = Number(playerData?.ranks?.faceit);
+  const faceitLevel = Number.isFinite(parsedFaceit) && parsedFaceit > 0 ? parsedFaceit : null;
+  const fallbackFaceit = 7;
 
   if (typeof playerData.winrate === 'number') {
     const winPercent = playerData.winrate * 100;
     let status = 'safe';
     let detail = 'Within normal win patterns.';
-    if (winPercent >= 70) {
+    let susScore = 30;
+    if (winPercent >= 75) {
       status = 'alert';
       detail = 'Extremely high winrate. Review POVs/demos.';
-    } else if (winPercent >= 60) {
+      susScore = 95;
+    } else if (winPercent >= 65) {
       status = 'watch';
       detail = 'Above average winrate. Keep an eye on consistency.';
+      susScore = 70;
     }
-    const susScoreOverrides = winPercent >= 70 ? { value: 100 } : winPercent >= 60 ? { min: 70 } : {};
-    pushSignal({ label: 'Winrate', value: formatPercent(winPercent), status, detail, susScoreOverrides });
+    pushSignal({ label: 'Winrate', value: formatPercent(winPercent), status, detail, susScore });
   }
 
   const aim = playerData.rating?.aim;
   if (typeof aim === 'number') {
+    const effectiveFaceit = faceitLevel && faceitLevel > 0 ? faceitLevel : fallbackFaceit;
+    const safeAimCeiling = effectiveFaceit * 10;
+    const alertAimThreshold = faceitLevel ? safeAimCeiling + 10 : 80;
     let status = 'safe';
-    let detail = 'Tracking looks human.';
-    if (aim >= 75) {
+    let detail = `Tracking matches a Faceit level ${faceitLevel || '≈7'} player.`;
+    let susScore = 30;
+    if (aim > safeAimCeiling) {
       status = 'watch';
-      detail = 'Very strong mechanical aim.';
+      detail = 'Aim rating is ahead of the displayed Faceit level.';
+      susScore = clampScore(55 + (aim - safeAimCeiling) * 2);
     }
-    if (aim >= 85) {
+    if (aim >= alertAimThreshold) {
       status = 'alert';
-      detail = 'Pro-level aim spikes. Check for suspicious vods.';
+      detail = 'Aim rating is wildly above rank expectations.';
+      susScore = 95;
     }
-    const susScoreOverrides = aim >= 90 ? { value: 100 } : aim >= 80 ? { min: 75 } : {};
-    pushSignal({ label: 'Aim rating', value: aim.toFixed(1), status, detail, susScoreOverrides });
+    pushSignal({ label: 'Aim rating', value: aim.toFixed(1), status, detail, susScore });
   }
 
   const reaction = playerData.stats?.reaction_time_ms;
   if (typeof reaction === 'number') {
     let status = 'safe';
     let detail = 'Reaction time is realistic.';
-    if (reaction <= 250) {
+    let susScore = 30;
+    if (reaction <= 500) {
       status = 'watch';
-      detail = 'Unusually fast reactions. Compare across matches.';
+      detail = 'Approaching sub-500ms reactions—monitor VODs.';
+      susScore = clampScore(60 + (500 - reaction) * 0.1);
     }
-    if (reaction <= 200) {
+    if (reaction <= 430) {
       status = 'alert';
-      detail = 'Borderline impossible reaction speed.';
+      detail = 'Sub-430ms flicks are extremely rare without assistance.';
+      susScore = 92;
     }
-    const susScoreOverrides = reaction <= 200 ? { value: 100 } : reaction <= 250 ? { min: 70 } : {};
-    pushSignal({ label: 'Reaction time', value: `${reaction.toFixed(0)} ms`, status, detail, susScoreOverrides });
+    pushSignal({ label: 'Reaction time', value: `${reaction.toFixed(0)} ms`, status, detail, susScore });
   }
 
   const headAccuracy = playerData.stats?.accuracy_head;
   if (typeof headAccuracy === 'number') {
     let status = 'safe';
     let detail = 'Headshot ratio in expected range.';
-    if (headAccuracy >= 30) {
+    let susScore = 35;
+    if (headAccuracy >= 60) {
       status = 'watch';
-      detail = 'High headshot rate—check rifle rounds.';
+      detail = '60%+ head accuracy is rare outside aim bots.';
+      susScore = clampScore(65 + (headAccuracy - 60) * 1.5);
     }
-    if (headAccuracy >= 45) {
+    if (headAccuracy >= 70) {
       status = 'alert';
-      detail = 'Headshot rate far above average.';
+      detail = '70%+ head accuracy is extremely suspicious.';
+      susScore = 95;
     }
-    const susScoreOverrides = headAccuracy >= 45 ? { value: 100 } : headAccuracy >= 30 ? { min: 70 } : {};
-    pushSignal({ label: 'Head accuracy', value: formatPercent(headAccuracy), status, detail, susScoreOverrides });
+    pushSignal({ label: 'Head accuracy', value: formatPercent(headAccuracy), status, detail, susScore });
   }
-
-  const bans = Array.isArray(playerData.bans) ? playerData.bans.length : 0;
-  pushSignal({
-    label: 'Ban history',
-    value: bans ? `${bans} ban${bans > 1 ? 's' : ''}` : 'Clean',
-    status: bans ? 'alert' : 'safe',
-    detail: bans ? 'Existing bans are a huge red flag.' : 'No bans reported by Leetify.',
-    susScoreOverrides: bans ? { value: Math.min(100, 70 + bans * 15) } : { value: 10 },
-  });
 
   return signals;
 };
@@ -369,6 +372,18 @@ function App() {
 
   const integritySignals = useMemo(() => buildIntegritySignals(playerData), [playerData]);
 
+  const overallSusScore = useMemo(() => {
+    if (!integritySignals.length) return null;
+    const total = integritySignals.reduce((sum, signal) => sum + signal.susScore, 0);
+    return Math.round(total / integritySignals.length);
+  }, [integritySignals]);
+
+  const resolveSusLevel = (score) => {
+    if (score >= 75) return 'alert';
+    if (score >= 50) return 'watch';
+    return 'safe';
+  };
+
   const bans = useMemo(() => ({
     list: Array.isArray(playerData?.bans) ? playerData.bans : [],
     count: Array.isArray(playerData?.bans) ? playerData.bans.length : 0,
@@ -444,6 +459,22 @@ function App() {
             <section className="panel integrity">
               <p className="eyebrow">Cheat radar</p>
               <p className="muted">Automated heuristics to highlight suspicious trends.</p>
+              {overallSusScore !== null && (
+                <div className="overall-sus">
+                  <div>
+                    <p className="metric-label">Overall susiness</p>
+                    <p className="metric-value">{overallSusScore}/100</p>
+                  </div>
+                  <div className="sus-meter" aria-label={`Overall suspicion score ${overallSusScore} out of 100`}>
+                    <div className="sus-meter-track">
+                      <div
+                        className={`sus-meter-fill ${resolveSusLevel(overallSusScore)}`}
+                        style={{ width: `${overallSusScore}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="signal-grid">
                 {integritySignals.map((signal) => (
                   <div key={signal.label} className={`signal-card ${signal.status}`}>
@@ -454,9 +485,11 @@ function App() {
                     <p className="metric-value">{signal.value}</p>
                     <div className="sus-meter" aria-label={`Suspicion score ${signal.susScore} out of 100`}>
                       <div className="sus-meter-track">
-                        <div className="sus-meter-fill" style={{ width: `${signal.susScore}%` }} />
+                        <div
+                          className={`sus-meter-fill ${signal.status}`}
+                          style={{ width: `${signal.susScore}%` }}
+                        />
                       </div>
-                      <span>{signal.susScore}/100 sus</span>
                     </div>
                     <p className="signal-detail">{signal.detail}</p>
                   </div>
