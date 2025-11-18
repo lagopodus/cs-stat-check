@@ -35,9 +35,19 @@ const formatDate = (value) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const severityScores = { safe: 20, watch: 60, alert: 95 };
+const getSusScore = (status, overrides = {}) => {
+  const base = severityScores[status] ?? 50;
+  if (overrides.max) return Math.min(overrides.max, base);
+  if (overrides.min) return Math.max(overrides.min, base);
+  if (overrides.value !== undefined) return overrides.value;
+  return base;
+};
+
 const buildIntegritySignals = (playerData) => {
   if (!playerData) return [];
   const signals = [];
+  const pushSignal = (payload) => signals.push({ ...payload, susScore: getSusScore(payload.status, payload.susScoreOverrides) });
 
   if (typeof playerData.winrate === 'number') {
     const winPercent = playerData.winrate * 100;
@@ -50,7 +60,8 @@ const buildIntegritySignals = (playerData) => {
       status = 'watch';
       detail = 'Above average winrate. Keep an eye on consistency.';
     }
-    signals.push({ label: 'Winrate', value: formatPercent(winPercent), status, detail });
+    const susScoreOverrides = winPercent >= 70 ? { value: 100 } : winPercent >= 60 ? { min: 70 } : {};
+    pushSignal({ label: 'Winrate', value: formatPercent(winPercent), status, detail, susScoreOverrides });
   }
 
   const aim = playerData.rating?.aim;
@@ -65,7 +76,8 @@ const buildIntegritySignals = (playerData) => {
       status = 'alert';
       detail = 'Pro-level aim spikes. Check for suspicious vods.';
     }
-    signals.push({ label: 'Aim rating', value: aim.toFixed(1), status, detail });
+    const susScoreOverrides = aim >= 90 ? { value: 100 } : aim >= 80 ? { min: 75 } : {};
+    pushSignal({ label: 'Aim rating', value: aim.toFixed(1), status, detail, susScoreOverrides });
   }
 
   const reaction = playerData.stats?.reaction_time_ms;
@@ -80,7 +92,8 @@ const buildIntegritySignals = (playerData) => {
       status = 'alert';
       detail = 'Borderline impossible reaction speed.';
     }
-    signals.push({ label: 'Reaction time', value: `${reaction.toFixed(0)} ms`, status, detail });
+    const susScoreOverrides = reaction <= 200 ? { value: 100 } : reaction <= 250 ? { min: 70 } : {};
+    pushSignal({ label: 'Reaction time', value: `${reaction.toFixed(0)} ms`, status, detail, susScoreOverrides });
   }
 
   const headAccuracy = playerData.stats?.accuracy_head;
@@ -95,15 +108,17 @@ const buildIntegritySignals = (playerData) => {
       status = 'alert';
       detail = 'Headshot rate far above average.';
     }
-    signals.push({ label: 'Head accuracy', value: formatPercent(headAccuracy), status, detail });
+    const susScoreOverrides = headAccuracy >= 45 ? { value: 100 } : headAccuracy >= 30 ? { min: 70 } : {};
+    pushSignal({ label: 'Head accuracy', value: formatPercent(headAccuracy), status, detail, susScoreOverrides });
   }
 
   const bans = Array.isArray(playerData.bans) ? playerData.bans.length : 0;
-  signals.push({
+  pushSignal({
     label: 'Ban history',
     value: bans ? `${bans} ban${bans > 1 ? 's' : ''}` : 'Clean',
     status: bans ? 'alert' : 'safe',
     detail: bans ? 'Existing bans are a huge red flag.' : 'No bans reported by Leetify.',
+    susScoreOverrides: bans ? { value: Math.min(100, 70 + bans * 15) } : { value: 10 },
   });
 
   return signals;
@@ -199,6 +214,7 @@ function App() {
   const [recentMatches, setRecentMatches] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showMechanics, setShowMechanics] = useState(false);
 
   useEffect(() => {
     setSteamIdInput(activeSteamId);
@@ -246,6 +262,10 @@ function App() {
     fetchStats();
     return () => controller.abort();
   }, [activeSteamId]);
+
+  useEffect(() => {
+    setShowMechanics(false);
+  }, [playerData]);
 
   const playerName = useMemo(
     () =>
@@ -420,6 +440,31 @@ function App() {
 
       {playerData && !loading && !error && (
         <>
+          {integritySignals.length > 0 && (
+            <section className="panel integrity">
+              <p className="eyebrow">Cheat radar</p>
+              <p className="muted">Automated heuristics to highlight suspicious trends.</p>
+              <div className="signal-grid">
+                {integritySignals.map((signal) => (
+                  <div key={signal.label} className={`signal-card ${signal.status}`}>
+                    <div className="signal-heading">
+                      <p className="metric-label">{signal.label}</p>
+                      <span className={`pill ${signal.status}`}>{signal.status}</span>
+                    </div>
+                    <p className="metric-value">{signal.value}</p>
+                    <div className="sus-meter" aria-label={`Suspicion score ${signal.susScore} out of 100`}>
+                      <div className="sus-meter-track">
+                        <div className="sus-meter-fill" style={{ width: `${signal.susScore}%` }} />
+                      </div>
+                      <span>{signal.susScore}/100 sus</span>
+                    </div>
+                    <p className="signal-detail">{signal.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="panel stats overview">
             <div className="panel-header">
               <div>
@@ -461,22 +506,6 @@ function App() {
             )}
           </section>
 
-          {integritySignals.length > 0 && (
-            <section className="panel integrity">
-              <p className="eyebrow">Cheat radar</p>
-              <p className="muted">Automated heuristics to highlight suspicious trends.</p>
-              <div className="signal-grid">
-                {integritySignals.map((signal) => (
-                  <div key={signal.label} className={`signal-card ${signal.status}`}>
-                    <p className="metric-label">{signal.label}</p>
-                    <p className="metric-value">{signal.value}</p>
-                    <p className="signal-detail">{signal.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
           {rankMetrics.length > 0 && (
             <section className="panel ranks">
               <p className="eyebrow">Global ranks</p>
@@ -515,31 +544,49 @@ function App() {
             </section>
           )}
 
-          {ratingMetrics.length > 0 && (
-            <section className="panel ratings">
-              <p className="eyebrow">Skill ratings</p>
-              <div className="metric-grid">
-                {ratingMetrics.map((metric) => (
-                  <div key={metric.label} className="metric-card">
-                    <p className="metric-label">{metric.label}</p>
-                    <p className="metric-value">{metric.value}</p>
-                  </div>
-                ))}
+          {(ratingMetrics.length > 0 || statMetrics.length > 0) && (
+            <section className="panel advanced">
+              <div className="collapsible-header">
+                <div>
+                  <p className="eyebrow">Advanced mechanical stats</p>
+                  <p className="muted">Ausgeklappt view for deep aim, utility, and trade data.</p>
+                </div>
+                <button type="button" className="toggle-button" onClick={() => setShowMechanics((prev) => !prev)}>
+                  {showMechanics ? 'Hide breakdown' : 'Show breakdown'}
+                </button>
               </div>
-            </section>
-          )}
 
-          {statMetrics.length > 0 && (
-            <section className="panel stats-grid">
-              <p className="eyebrow">Utility & behavior stats</p>
-              <div className="metric-grid dense">
-                {statMetrics.map((metric) => (
-                  <div key={metric.label} className="metric-card compact">
-                    <p className="metric-label">{metric.label}</p>
-                    <p className="metric-value">{metric.value}</p>
-                  </div>
-                ))}
-              </div>
+              {showMechanics && (
+                <div className="advanced-content">
+                  {ratingMetrics.length > 0 && (
+                    <div>
+                      <p className="eyebrow">Skill ratings</p>
+                      <div className="metric-grid">
+                        {ratingMetrics.map((metric) => (
+                          <div key={metric.label} className="metric-card">
+                            <p className="metric-label">{metric.label}</p>
+                            <p className="metric-value">{metric.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {statMetrics.length > 0 && (
+                    <div className="stats-grid">
+                      <p className="eyebrow">Utility & behavior stats</p>
+                      <div className="metric-grid dense">
+                        {statMetrics.map((metric) => (
+                          <div key={metric.label} className="metric-card compact">
+                            <p className="metric-label">{metric.label}</p>
+                            <p className="metric-value">{metric.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
         </>
