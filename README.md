@@ -1,3 +1,27 @@
+# Leetify Steam Stats Lookup
+
+The app lets you deploy a lightweight React frontend to GitHub Pages (or any static host) and instantly
+load CS player stats from the Leetify API simply by visiting `https://<your-domain>/<steamId>`. The Steam ID is
+read from the path segment, so each player can have their own shareable URL without configuring routes.
+
+## Configuration
+
+1. Create a `.env` file (or configure your deployment secrets) with the following values:
+
+   ```bash
+   REACT_APP_LEETIFY_API_KEY=<optional-api-key>
+   REACT_APP_LEETIFY_API_URL=https://api.leetify.com/api/stats/users
+   ```
+
+   `REACT_APP_LEETIFY_API_KEY` is only required if your Leetify workspace enforces authentication. If your
+   endpoint differs from the default, update `REACT_APP_LEETIFY_API_URL`. You can use `{steamId}` inside this
+   URL to control where the Steam ID is interpolated.
+
+2. Run `npm run build` and deploy the `build` folder to GitHub Pages.
+3. Share URLs like `https://example.com/76561198000000000` to dynamically fetch stats for that Steam account.
+
+---
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
