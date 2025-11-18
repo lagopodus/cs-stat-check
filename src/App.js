@@ -375,12 +375,37 @@ function App() {
       });
   }, [playerData]);
 
+  const getRankIcon = (key, rawValue) => {
+    if (key === 'faceit') {
+      const parsed = Number.parseInt(rawValue, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) return null;
+      const level = Math.max(1, Math.min(10, parsed));
+      return {
+        src: `https://cdn.faceit.com/images/league/levels/faceit_lvl${level}.svg`,
+        alt: `Faceit level ${level}`,
+      };
+    }
+
+    if (key === 'premier') {
+      return {
+        src: 'https://cdn.cloudflare.steamstatic.com/apps/csgo/images/premier/premier_badge.svg',
+        alt: 'Premier rating badge',
+      };
+    }
+
+    return null;
+  };
+
   const rankMetrics = useMemo(() => {
     if (!playerData || !playerData.ranks) return [];
     const rankKeys = ['leetify', 'premier', 'faceit', 'faceit_elo', 'wingman', 'renown'];
     return rankKeys
       .filter((key) => playerData.ranks[key] !== undefined)
-      .map((key) => ({ label: friendlyLabel(key), value: formatNumber(playerData.ranks[key]) }));
+      .map((key) => ({
+        label: friendlyLabel(key),
+        value: formatNumber(playerData.ranks[key]),
+        icon: getRankIcon(key, playerData.ranks[key]),
+      }));
   }, [playerData]);
 
   const mapRanks = useMemo(() => {
@@ -556,9 +581,14 @@ function App() {
               <p className="eyebrow">Global ranks</p>
               <div className="metric-grid">
                 {rankMetrics.map((rank) => (
-                  <div key={rank.label} className="metric-card">
-                    <p className="metric-label">{rank.label}</p>
-                    <p className="metric-value">{rank.value}</p>
+                  <div key={rank.label} className={`metric-card rank-card${rank.icon ? ' has-icon' : ''}`}>
+                    {rank.icon && (
+                      <img className="rank-icon" src={rank.icon.src} alt={rank.icon.alt} loading="lazy" />
+                    )}
+                    <div>
+                      <p className="metric-label">{rank.label}</p>
+                      <p className="metric-value">{rank.value}</p>
+                    </div>
                   </div>
                 ))}
               </div>

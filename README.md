@@ -12,7 +12,8 @@ read from the path segment, so each player can have their own shareable URL with
 * Winrate, aim-vs-Faceit, head accuracy, and reaction-time heuristics that now flow dynamically—normal stats stay at 0 sus whil
   e outliers gradually ramp toward 100—alongside a ban summary card and an expandable mechanical breakdown for precise aim/util
   ity stats.
-* Leetify skill ratings, CS2 Premier/Faceit/Wingman ranks, and a per-map table for competitive ranks.
+* Leetify skill ratings, CS2 Premier/Faceit/Wingman ranks (with official Premier badge + Faceit level icons), and a per-map tabl
+e for competitive ranks.
 * Raw mechanical/utility stats (flash effectiveness, opening duels, trading success, etc.) that can stay collapsed until you
   click "Show breakdown," plus the raw API payload for deep dives.
 

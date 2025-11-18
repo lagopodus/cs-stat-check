@@ -149,6 +149,25 @@ code {
   min-height: 120px;
 }
 
+.metric-card.rank-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-height: 0;
+}
+
+.metric-card.rank-card.has-icon {
+  padding: 0.85rem 1.1rem;
+}
+
+.rank-icon {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.3));
+}
+
 .metric-card.compact {
   min-height: 0;
 }
