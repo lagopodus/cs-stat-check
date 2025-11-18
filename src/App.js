@@ -35,15 +35,42 @@ const formatDate = (value) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-const severityScores = { safe: 25, watch: 60, alert: 90 };
 const clampScore = (value) => Math.max(0, Math.min(100, value));
+const resolveSusLevel = (score) => {
+  if (score >= 75) return 'alert';
+  if (score >= 40) return 'watch';
+  return 'safe';
+};
+
+const curvedProgress = (progress, exponent = 1.2) => Math.pow(progress, exponent);
+
+const calculateDynamicScore = (value, { safe, danger, direction = 'high', exponent = 1.2 }) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || safe === danger) return 0;
+  if (direction === 'low') {
+    if (value >= safe) return 0;
+    if (value <= danger) return 100;
+    const progress = (safe - value) / (safe - danger);
+    return clampScore(Math.round(curvedProgress(progress, exponent) * 100));
+  }
+
+  if (value <= safe) return 0;
+  if (value >= danger) return 100;
+  const progress = (value - safe) / (danger - safe);
+  return clampScore(Math.round(curvedProgress(progress, exponent) * 100));
+};
 
 const buildIntegritySignals = (playerData) => {
   if (!playerData) return [];
   const signals = [];
-  const pushSignal = (payload) => {
-    const baseScore = payload.susScore ?? severityScores[payload.status] ?? 50;
-    signals.push({ ...payload, susScore: clampScore(baseScore) });
+  const pushSignal = ({ label, value, detail, susScore = 0 }) => {
+    const normalized = clampScore(Math.round(susScore));
+    signals.push({
+      label,
+      value,
+      detail,
+      susScore: normalized,
+      status: resolveSusLevel(normalized),
+    });
   };
 
   const parsedFaceit = Number(playerData?.ranks?.faceit);
@@ -52,76 +79,67 @@ const buildIntegritySignals = (playerData) => {
 
   if (typeof playerData.winrate === 'number') {
     const winPercent = playerData.winrate * 100;
-    let status = 'safe';
-    let detail = 'Within normal win patterns.';
-    let susScore = 30;
-    if (winPercent >= 75) {
-      status = 'alert';
-      detail = 'Extremely high winrate. Review POVs/demos.';
-      susScore = 95;
-    } else if (winPercent >= 65) {
-      status = 'watch';
-      detail = 'Above average winrate. Keep an eye on consistency.';
-      susScore = 70;
+    const susScore = calculateDynamicScore(winPercent, { safe: 60, danger: 80, exponent: 1.1 });
+    let detail = 'Win rate sits within normal matchmaking variance.';
+    if (susScore >= 75) {
+      detail = 'Insanely high win rate—scout VODs or check for smurf boosts.';
+    } else if (susScore > 0) {
+      detail = 'Elevated win rate. Make sure streaks match the visible rank.';
     }
-    pushSignal({ label: 'Winrate', value: formatPercent(winPercent), status, detail, susScore });
+    pushSignal({ label: 'Winrate', value: formatPercent(winPercent), detail, susScore });
   }
 
   const aim = playerData.rating?.aim;
   if (typeof aim === 'number') {
     const effectiveFaceit = faceitLevel && faceitLevel > 0 ? faceitLevel : fallbackFaceit;
     const safeAimCeiling = effectiveFaceit * 10;
-    const alertAimThreshold = faceitLevel ? safeAimCeiling + 10 : 80;
-    let status = 'safe';
-    let detail = `Tracking matches a Faceit level ${faceitLevel || '≈7'} player.`;
-    let susScore = 30;
-    if (aim > safeAimCeiling) {
-      status = 'watch';
-      detail = 'Aim rating is ahead of the displayed Faceit level.';
-      susScore = clampScore(55 + (aim - safeAimCeiling) * 2);
+    const alertAimThreshold = faceitLevel ? safeAimCeiling + 20 : Math.max(80, safeAimCeiling + 10);
+    const susScore = calculateDynamicScore(aim, {
+      safe: safeAimCeiling,
+      danger: alertAimThreshold,
+      exponent: 1.3,
+    });
+    let detail = `Aim rating matches a Faceit level ${faceitLevel || '≈7'} player.`;
+    if (susScore >= 75) {
+      detail = 'Aim rating is far ahead of the visible Faceit level.';
+    } else if (susScore > 0) {
+      detail = 'Aim is creeping ahead of the expected Faceit bracket.';
     }
-    if (aim >= alertAimThreshold) {
-      status = 'alert';
-      detail = 'Aim rating is wildly above rank expectations.';
-      susScore = 95;
-    }
-    pushSignal({ label: 'Aim rating', value: aim.toFixed(1), status, detail, susScore });
+    pushSignal({ label: 'Aim rating', value: aim.toFixed(1), detail, susScore });
   }
 
   const reaction = playerData.stats?.reaction_time_ms;
   if (typeof reaction === 'number') {
-    let status = 'safe';
-    let detail = 'Reaction time is realistic.';
-    let susScore = 30;
-    if (reaction <= 500) {
-      status = 'watch';
-      detail = 'Approaching sub-500ms reactions—monitor VODs.';
-      susScore = clampScore(60 + (500 - reaction) * 0.1);
+    const susScore = calculateDynamicScore(reaction, {
+      safe: 520,
+      danger: 450,
+      direction: 'low',
+      exponent: 1.2,
+    });
+    let detail = 'Reaction time looks human.';
+    if (susScore >= 75) {
+      detail = 'Lightning-fast reactions rarely show up without external help.';
+    } else if (susScore > 0) {
+      detail = 'Fast flick window—double-check POVs for consistency.';
     }
-    if (reaction <= 430) {
-      status = 'alert';
-      detail = 'Sub-430ms flicks are extremely rare without assistance.';
-      susScore = 92;
-    }
-    pushSignal({ label: 'Reaction time', value: `${reaction.toFixed(0)} ms`, status, detail, susScore });
+    pushSignal({ label: 'Reaction time', value: `${reaction.toFixed(0)} ms`, detail, susScore });
   }
 
   const headAccuracy = playerData.stats?.accuracy_head;
   if (typeof headAccuracy === 'number') {
-    let status = 'safe';
-    let detail = 'Headshot ratio in expected range.';
-    let susScore = 35;
-    if (headAccuracy >= 60) {
-      status = 'watch';
-      detail = '60%+ head accuracy is rare outside aim bots.';
-      susScore = clampScore(65 + (headAccuracy - 60) * 1.5);
+    const accuracyPercent = headAccuracy > 1 ? headAccuracy : headAccuracy * 100;
+    const susScore = calculateDynamicScore(accuracyPercent, {
+      safe: 60,
+      danger: 75,
+      exponent: 1.1,
+    });
+    let detail = 'Head accuracy is in the typical range for legit players.';
+    if (susScore >= 75) {
+      detail = 'Head accuracy is unnaturally high—possible hard-lock aim assistance.';
+    } else if (susScore > 0) {
+      detail = 'Precision is trending upward; make sure POVs back it up.';
     }
-    if (headAccuracy >= 70) {
-      status = 'alert';
-      detail = '70%+ head accuracy is extremely suspicious.';
-      susScore = 95;
-    }
-    pushSignal({ label: 'Head accuracy', value: formatPercent(headAccuracy), status, detail, susScore });
+    pushSignal({ label: 'Head accuracy', value: formatPercent(accuracyPercent), detail, susScore });
   }
 
   return signals;
@@ -377,12 +395,6 @@ function App() {
     const total = integritySignals.reduce((sum, signal) => sum + signal.susScore, 0);
     return Math.round(total / integritySignals.length);
   }, [integritySignals]);
-
-  const resolveSusLevel = (score) => {
-    if (score >= 75) return 'alert';
-    if (score >= 50) return 'watch';
-    return 'safe';
-  };
 
   const bans = useMemo(() => ({
     list: Array.isArray(playerData?.bans) ? playerData.bans : [],
