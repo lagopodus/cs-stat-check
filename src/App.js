@@ -35,6 +35,19 @@ const formatDate = (value) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const clampScore = (value) => Math.max(0, Math.min(100, value));
 const resolveSusLevel = (score) => {
   if (score >= 75) return 'alert';
@@ -422,7 +435,13 @@ function App() {
   }, [integritySignals]);
 
   const bans = useMemo(() => ({
-    list: Array.isArray(playerData?.bans) ? playerData.bans : [],
+    list: Array.isArray(playerData?.bans)
+      ? playerData.bans.map((ban) => ({
+          platform: ban.platform || 'Unknown',
+          nickname: ban.platform_nickname || '—',
+          bannedSince: formatDateTime(ban.banned_since),
+        }))
+      : [],
     count: Array.isArray(playerData?.bans) ? playerData.bans.length : 0,
   }), [playerData]);
 
@@ -436,10 +455,10 @@ function App() {
     <div className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Leetify API powered</p>
-          <h1>Steam integrity scanner</h1>
+          <p className="eyebrow">Leetify powered, open source</p>
+          <h1>CS2 integrity scanner</h1>
           <p>
-            Drop a Steam ID in the URL (<code>/{'{steam64_id}'}</code>) and we will pull every public Leetify signal so you can
+            Drop a Steam ID in the URL (<code>/{'{steam64_id}'}</code>) and we will pull every public information so you can
             spot suspicious performance spikes before queueing.
           </p>
         </div>
@@ -447,7 +466,7 @@ function App() {
 
       <section className="panel">
         <form className="lookup-form" onSubmit={handleSubmit}>
-          <label htmlFor="steamId">Steam ID (64-bit)</label>
+          <label htmlFor="steamId">Steam ID (64-bit) or Steam-URL</label>
           <div className="input-row">
             <input
               id="steamId"
@@ -462,8 +481,8 @@ function App() {
             </button>
           </div>
           <p className="help-text">
-            Tip: navigate straight to <code>/{'{steamId}'}</code> after deploying and the page will fetch automatically so you
-            can share "is this guy legit?" links.
+            Tip: navigate straight to <code>/{'{steamId}'}</code> and the page will fetch automatically so you
+            can quickly check "is this guy legit?".
           </p>
         </form>
       </section>
@@ -540,7 +559,28 @@ function App() {
               {bans.count ? (
                   <div>
                     <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
-                    <p>Review the raw payload below for ban details before trusting this account.</p>
+                    {bans.list.length > 0 && (
+                        <div className="table-wrapper">
+                          <table className="ban-table">
+                            <thead>
+                            <tr>
+                              <th>Platform</th>
+                              <th>Nickname</th>
+                              <th>Banned since</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {bans.list.map((ban, index) => (
+                                <tr key={`${ban.platform}-${ban.bannedSince}-${index}`}>
+                                  <td>{friendlyLabel(ban.platform)}</td>
+                                  <td>{ban.nickname}</td>
+                                  <td>{ban.bannedSince}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                          </table>
+                        </div>
+                    )}
                   </div>
               ) : (
                   <div>
