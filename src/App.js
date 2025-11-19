@@ -249,13 +249,21 @@ const extractSteamId = (value = '') => {
   return match ? match[0] : null;
 };
 
+const decodeSegment = (segment) => {
+  try {
+    return decodeURIComponent(segment);
+  } catch (error) {
+    return segment;
+  }
+};
+
 const extractVanitySegment = (value = '') => {
   if (!value) return null;
   const vanityUrlMatch = value.match(/steamcommunity\.com\/(?:id|profiles)\/([^/?#]+)/i);
   if (vanityUrlMatch) {
     const [, segment] = vanityUrlMatch;
     if (!STEAM_ID_REGEX.test(segment)) {
-      return segment;
+      return decodeSegment(segment);
     }
   }
   const trimmed = value.trim();
@@ -265,19 +273,56 @@ const extractVanitySegment = (value = '') => {
   return null;
 };
 
+const VANITY_CACHE = new Map();
+
+const buildVanityResolverUrls = (vanity) => {
+  const encoded = encodeURIComponent(vanity);
+  const urls = [];
+  const configured = (process.env.REACT_APP_STEAM_VANITY_RESOLVER || '').trim();
+
+  if (configured) {
+    if (configured.includes('{vanity}')) {
+      urls.push(configured.replace('{vanity}', encoded));
+    } else {
+      const hasQuery = configured.includes('?');
+      const needsAmpersand = hasQuery && !configured.endsWith('?') && !configured.endsWith('&');
+      const separator = hasQuery ? (needsAmpersand ? '&' : '') : '?';
+      urls.push(`${configured}${separator}vanityurl=${encoded}`);
+    }
+  }
+
+  urls.push(`https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encoded}`);
+  urls.push(`https://r.jina.ai/https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encoded}`);
+  urls.push(`https://cors.isomorphic-git.org/https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encoded}`);
+
+  return [...new Set(urls)];
+};
+
 const resolveVanitySteamId = async (vanity) => {
   if (!vanity) return null;
-  const endpoint = `https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encodeURIComponent(vanity)}`;
-  try {
-    const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
-    if (!response.ok) return null;
-    const payload = await response.json();
-    if (payload?.success === 1 && payload?.steamid) {
-      return payload.steamid;
-    }
-  } catch (error) {
-    return null;
+  const normalized = vanity.trim();
+  if (!normalized) return null;
+  if (VANITY_CACHE.has(normalized)) {
+    return VANITY_CACHE.get(normalized);
   }
+
+  const candidates = buildVanityResolverUrls(normalized);
+  for (const endpoint of candidates) {
+    try {
+      const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        continue;
+      }
+      const payload = await response.json();
+      if (payload?.success === 1 && payload?.steamid) {
+        VANITY_CACHE.set(normalized, payload.steamid);
+        return payload.steamid;
+      }
+    } catch (error) {
+      // Ignore and try the next resolver.
+    }
+  }
+
   return null;
 };
 
