@@ -35,6 +35,19 @@ const formatDate = (value) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const clampScore = (value) => Math.max(0, Math.min(100, value));
 const resolveSusLevel = (score) => {
   if (score >= 75) return 'alert';
@@ -226,6 +239,46 @@ const buildLeetifyUrl = (steamId) => {
     return `${configured}${separator}steam64_id=${encode(steamId)}`;
   }
   return `https://api-public.cs-prod.leetify.com/v3/profile?steam64_id=${encode(steamId)}`;
+};
+
+const STEAM_ID_REGEX = /\b\d{17}\b/;
+
+const extractSteamId = (value = '') => {
+  if (!value) return null;
+  const match = value.match(STEAM_ID_REGEX);
+  return match ? match[0] : null;
+};
+
+const extractVanitySegment = (value = '') => {
+  if (!value) return null;
+  const vanityUrlMatch = value.match(/steamcommunity\.com\/(?:id|profiles)\/([^/?#]+)/i);
+  if (vanityUrlMatch) {
+    const [, segment] = vanityUrlMatch;
+    if (!STEAM_ID_REGEX.test(segment)) {
+      return segment;
+    }
+  }
+  const trimmed = value.trim();
+  if (trimmed && /^[a-zA-Z0-9_-]+$/.test(trimmed) && !STEAM_ID_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+};
+
+const resolveVanitySteamId = async (vanity) => {
+  if (!vanity) return null;
+  const endpoint = `https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encodeURIComponent(vanity)}`;
+  try {
+    const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    if (payload?.success === 1 && payload?.steamid) {
+      return payload.steamid;
+    }
+  } catch (error) {
+    return null;
+  }
+  return null;
 };
 
 function App() {
@@ -422,14 +475,40 @@ function App() {
   }, [integritySignals]);
 
   const bans = useMemo(() => ({
-    list: Array.isArray(playerData?.bans) ? playerData.bans : [],
+    list: Array.isArray(playerData?.bans)
+      ? playerData.bans.map((ban) => ({
+          platform: ban.platform || 'Unknown',
+          nickname: ban.platform_nickname || '—',
+          bannedSince: formatDateTime(ban.banned_since),
+        }))
+      : [],
     count: Array.isArray(playerData?.bans) ? playerData.bans.length : 0,
   }), [playerData]);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const trimmed = steamIdInput.trim();
-    setActiveSteamId(trimmed);
+    if (!trimmed) return;
+    setError('');
+
+    const regexMatch = extractSteamId(trimmed);
+    if (regexMatch) {
+      setActiveSteamId(regexMatch);
+      return;
+    }
+
+    const vanitySegment = extractVanitySegment(trimmed);
+    if (vanitySegment) {
+      const resolved = await resolveVanitySteamId(vanitySegment);
+      if (resolved) {
+        setActiveSteamId(resolved);
+        return;
+      }
+    }
+
+    setError('Unable to extract a 64-bit Steam ID. Paste a direct ID or Steam profile URL.');
+    setPlayerData(null);
+    setRecentMatches([]);
   };
 
   return (
@@ -447,13 +526,13 @@ function App() {
 
       <section className="panel">
         <form className="lookup-form" onSubmit={handleSubmit}>
-          <label htmlFor="steamId">Steam ID (64-bit)</label>
+          <label htmlFor="steamId">Steam ID (64-bit) or Steam profile URL</label>
           <div className="input-row">
             <input
               id="steamId"
               name="steamId"
               type="text"
-              placeholder="7656119..."
+              placeholder="7656119... or https://steamcommunity.com/id/..."
               value={steamIdInput}
               onChange={(event) => setSteamIdInput(event.target.value)}
             />
@@ -541,6 +620,28 @@ function App() {
                   <div>
                     <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
                     <p>Review the raw payload below for ban details before trusting this account.</p>
+                    {bans.list.length > 0 && (
+                        <div className="table-wrapper">
+                          <table className="ban-table">
+                            <thead>
+                            <tr>
+                              <th>Platform</th>
+                              <th>Nickname</th>
+                              <th>Banned since</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {bans.list.map((ban, index) => (
+                                <tr key={`${ban.platform}-${ban.bannedSince}-${index}`}>
+                                  <td>{friendlyLabel(ban.platform)}</td>
+                                  <td>{ban.nickname}</td>
+                                  <td>{ban.bannedSince}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                          </table>
+                        </div>
+                    )}
                   </div>
               ) : (
                   <div>
