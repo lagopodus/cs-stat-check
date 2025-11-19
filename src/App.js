@@ -455,10 +455,10 @@ function App() {
     <div className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Leetify API powered</p>
-          <h1>Steam integrity scanner</h1>
+          <p className="eyebrow">Leetify powered, open source</p>
+          <h1>CS2 integrity scanner</h1>
           <p>
-            Drop a Steam ID in the URL (<code>/{'{steam64_id}'}</code>) and we will pull every public Leetify signal so you can
+            Drop a Steam ID in the URL (<code>/{'{steam64_id}'}</code>) and we will pull every public information so you can
             spot suspicious performance spikes before queueing.
           </p>
         </div>
@@ -466,7 +466,7 @@ function App() {
 
       <section className="panel">
         <form className="lookup-form" onSubmit={handleSubmit}>
-          <label htmlFor="steamId">Steam ID (64-bit)</label>
+          <label htmlFor="steamId">Steam ID (64-bit) or Steam-URL</label>
           <div className="input-row">
             <input
               id="steamId"
@@ -481,8 +481,8 @@ function App() {
             </button>
           </div>
           <p className="help-text">
-            Tip: navigate straight to <code>/{'{steamId}'}</code> after deploying and the page will fetch automatically so you
-            can share "is this guy legit?" links.
+            Tip: navigate straight to <code>/{'{steamId}'}</code> and the page will fetch automatically so you
+            can quickly check "is this guy legit?".
           </p>
         </form>
       </section>
@@ -559,7 +559,6 @@ function App() {
               {bans.count ? (
                   <div>
                     <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
-                    <p>Review the raw payload below for ban details before trusting this account.</p>
                     {bans.list.length > 0 && (
                         <div className="table-wrapper">
                           <table className="ban-table">
