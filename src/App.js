@@ -38,7 +38,7 @@ const formatDate = (value) => {
 const clampScore = (value) => Math.max(0, Math.min(100, value));
 const resolveSusLevel = (score) => {
   if (score >= 75) return 'alert';
-  if (score >= 40) return 'watch';
+  if (score >= 40) return 'risk';
   return 'safe';
 };
 
@@ -491,193 +491,195 @@ function App() {
       )}
 
       {playerData && !loading && !error && (
-        <>
-          {integritySignals.length > 0 && (
-            <section className="panel integrity">
-              <p className="eyebrow">Cheat radar</p>
-              <p className="muted">Automated heuristics to highlight suspicious trends.</p>
-              {overallSusScore !== null && (
-                <div className="overall-sus">
-                  <div>
-                    <p className="metric-label">Overall susiness</p>
-                    <p className="metric-value">{overallSusScore}/100</p>
-                  </div>
-                  <div className="sus-meter" aria-label={`Overall suspicion score ${overallSusScore} out of 100`}>
-                    <div className="sus-meter-track">
-                      <div
-                        className={`sus-meter-fill ${resolveSusLevel(overallSusScore)}`}
-                        style={{ width: `${overallSusScore}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="signal-grid">
-                {integritySignals.map((signal) => (
-                  <div key={signal.label} className={`signal-card ${signal.status}`}>
-                    <div className="signal-heading">
-                      <p className="metric-label">{signal.label}</p>
-                      <span className={`pill ${signal.status}`}>{signal.status}</span>
-                    </div>
-                    <p className="metric-value">{signal.value}</p>
-                    <div className="sus-meter" aria-label={`Suspicion score ${signal.susScore} out of 100`}>
-                      <div className="sus-meter-track">
-                        <div
-                          className={`sus-meter-fill ${signal.status}`}
-                          style={{ width: `${signal.susScore}%` }}
-                        />
+          <>
+            {integritySignals.length > 0 && (
+                <section className="panel integrity">
+                  <p className="eyebrow">Cheat radar</p>
+                  <p className="muted">Automated heuristics to highlight suspicious trends.</p>
+                  {overallSusScore !== null && (
+                      <div className="overall-sus">
+                        <div>
+                          <p className="metric-label">Cheat Probability</p>
+                          <p className="metric-value">{overallSusScore}/100</p>
+                        </div>
+                        <div className="sus-meter" aria-label={`Overall suspicion score ${overallSusScore} out of 100`}>
+                          <div className="sus-meter-track">
+                            <div
+                                className={`sus-meter-fill ${resolveSusLevel(overallSusScore)}`}
+                                style={{width: `${overallSusScore}%`}}
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <p className="signal-detail">{signal.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section className="panel stats overview">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Player overview</p>
-                <h2>{playerName}</h2>
-                <p className="steam-link">
-                  Steam ID: <code>{playerData.steam64_id || activeSteamId}</code>
-                </p>
-              </div>
-              {playerData.privacy_mode && <span className="pill neutral">{friendlyLabel(playerData.privacy_mode)}</span>}
-            </div>
-
-            {overviewMetrics.length > 0 ? (
-              <div className="metric-grid">
-                {overviewMetrics.map((metric) => (
-                  <div key={metric.label} className="metric-card">
-                    <p className="metric-label">{metric.label}</p>
-                    <p className="metric-value">{metric.value}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No overview metrics available in the API response.</p>
-            )}
-          </section>
-
-          <section className={`panel bans ${bans.count ? 'alert' : 'success'}`}>
-            <p className="eyebrow">Ban check</p>
-            {bans.count ? (
-              <div>
-                <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
-                <p>Review the raw payload below for ban details before trusting this account.</p>
-              </div>
-            ) : (
-              <div>
-                <h3>No bans detected</h3>
-                <p>Leetify has not flagged this account with VAC, game, or third-party bans.</p>
-              </div>
-            )}
-          </section>
-
-          {rankMetrics.length > 0 && (
-            <section className="panel ranks">
-              <p className="eyebrow">Global ranks</p>
-              <div className="metric-grid">
-                {rankMetrics.map((rank) => (
-                  <div key={rank.label} className={`metric-card rank-card${rank.icon ? ' has-icon' : ''}`}>
-                    {rank.icon && (
-                      <img className="rank-icon" src={rank.icon.src} alt={rank.icon.alt} loading="lazy" />
-                    )}
-                    <div>
-                      <p className="metric-label">{rank.label}</p>
-                      <p className="metric-value">{rank.value}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {mapRanks.length > 0 && (
-            <section className="panel map-ranks">
-              <p className="eyebrow">Per-map competitive ranks</p>
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Map</th>
-                      <th>Rank</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mapRanks.map((map) => (
-                      <tr key={map.map_name}>
-                        <td>{friendlyLabel(map.map_name)}</td>
-                        <td>{map.rank ? formatNumber(map.rank) : 'Unranked'}</td>
-                      </tr>
+                  )}
+                  <div className="signal-grid">
+                    {integritySignals.map((signal) => (
+                        <div key={signal.label} className={`signal-card ${signal.status}`}>
+                          <div className="signal-heading">
+                            <p className="metric-label">{signal.label}</p>
+                            <span className={`pill ${signal.status}`}>{signal.status}</span>
+                          </div>
+                          <p className="metric-value">{signal.value}</p>
+                          <div className="sus-meter" aria-label={`Suspicion score ${signal.susScore} out of 100`}>
+                            <div className="sus-meter-track">
+                              <div
+                                  className={`sus-meter-fill ${signal.status}`}
+                                  style={{width: `${signal.susScore}%`}}
+                              />
+                            </div>
+                          </div>
+                          <p className="signal-detail">{signal.detail}</p>
+                        </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
+                  </div>
+                </section>
+            )}
 
-          {(ratingMetrics.length > 0 || statMetrics.length > 0) && (
-            <section className="panel advanced">
-              <div className="collapsible-header">
-                <div>
-                  <p className="eyebrow">Advanced mechanical stats</p>
-                  <p className="muted">Ausgeklappt view for deep aim, utility, and trade data.</p>
-                </div>
-                <button type="button" className="toggle-button" onClick={() => setShowMechanics((prev) => !prev)}>
-                  {showMechanics ? 'Hide breakdown' : 'Show breakdown'}
-                </button>
-              </div>
-
-              {showMechanics && (
-                <div className="advanced-content">
-                  {ratingMetrics.length > 0 && (
-                    <div>
-                      <p className="eyebrow">Skill ratings</p>
-                      <div className="metric-grid">
-                        {ratingMetrics.map((metric) => (
-                          <div key={metric.label} className="metric-card">
-                            <p className="metric-label">{metric.label}</p>
-                            <p className="metric-value">{metric.value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {statMetrics.length > 0 && (
-                    <div className="stats-grid">
-                      <p className="eyebrow">Utility & behavior stats</p>
-                      <div className="metric-grid dense">
-                        {statMetrics.map((metric) => (
-                          <div key={metric.label} className="metric-card compact">
-                            <p className="metric-label">{metric.label}</p>
-                            <p className="metric-value">{metric.value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+            <section className={`panel bans ${bans.count ? 'alert' : 'success'}`}>
+              <p className="eyebrow">Ban check</p>
+              {bans.count ? (
+                  <div>
+                    <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
+                    <p>Review the raw payload below for ban details before trusting this account.</p>
+                  </div>
+              ) : (
+                  <div>
+                    <h3>No bans detected</h3>
+                    <p>Leetify has not flagged this account with VAC, game, or third-party bans.</p>
+                  </div>
               )}
             </section>
-          )}
-        </>
+
+            <section className="panel stats overview">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Player overview</p>
+                  <h2>{playerName}</h2>
+                  <p className="steam-link">
+                    Steam ID: <code>{playerData.steam64_id || activeSteamId}</code>
+                  </p>
+                </div>
+                {playerData.privacy_mode &&
+                    <span className="pill neutral">{friendlyLabel(playerData.privacy_mode)}</span>}
+              </div>
+
+              {overviewMetrics.length > 0 ? (
+                  <div className="metric-grid">
+                    {overviewMetrics.map((metric) => (
+                        <div key={metric.label} className="metric-card">
+                          <p className="metric-label">{metric.label}</p>
+                          <p className="metric-value">{metric.value}</p>
+                        </div>
+                    ))}
+                  </div>
+              ) : (
+                  <p className="muted">No overview metrics available in the API response.</p>
+              )}
+            </section>
+
+
+            {rankMetrics.length > 0 && (
+                <section className="panel ranks">
+                  <p className="eyebrow">Global ranks</p>
+                  <div className="metric-grid">
+                    {rankMetrics.map((rank) => (
+                        <div key={rank.label} className={`metric-card rank-card${rank.icon ? ' has-icon' : ''}`}>
+                          {rank.icon && (
+                              <img className="rank-icon" src={rank.icon.src} alt={rank.icon.alt} loading="lazy"/>
+                          )}
+                          <div>
+                            <p className="metric-label">{rank.label}</p>
+                            <p className="metric-value">{rank.value}</p>
+                          </div>
+                        </div>
+                    ))}
+                  </div>
+                </section>
+            )}
+
+            {mapRanks.length > 0 && (
+                <section className="panel map-ranks">
+                  <p className="eyebrow">Per-map competitive ranks</p>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                      <tr>
+                        <th>Map</th>
+                        <th>Rank</th>
+                      </tr>
+                      </thead>
+                      <tbody>
+                      {mapRanks.map((map) => (
+                          <tr key={map.map_name}>
+                            <td>{friendlyLabel(map.map_name)}</td>
+                            <td>{map.rank ? formatNumber(map.rank) : 'Unranked'}</td>
+                          </tr>
+                      ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+            )}
+
+            {(ratingMetrics.length > 0 || statMetrics.length > 0) && (
+                <section className="panel advanced">
+                  <div className="collapsible-header">
+                    <div>
+                      <p className="eyebrow">Advanced mechanical stats</p>
+                      <p className="muted">Ausgeklappt view for deep aim, utility, and trade data.</p>
+                    </div>
+                    <button type="button" className="toggle-button" onClick={() => setShowMechanics((prev) => !prev)}>
+                      {showMechanics ? 'Hide breakdown' : 'Show breakdown'}
+                    </button>
+                  </div>
+
+                  {showMechanics && (
+                      <div className="advanced-content">
+                        {ratingMetrics.length > 0 && (
+                            <div>
+                              <p className="eyebrow">Skill ratings</p>
+                              <div className="metric-grid">
+                                {ratingMetrics.map((metric) => (
+                                    <div key={metric.label} className="metric-card">
+                                      <p className="metric-label">{metric.label}</p>
+                                      <p className="metric-value">{metric.value}</p>
+                                    </div>
+                                ))}
+                              </div>
+                            </div>
+                        )}
+
+                        {statMetrics.length > 0 && (
+                            <div className="stats-grid">
+                              <p className="eyebrow">Utility & behavior stats</p>
+                              <div className="metric-grid dense">
+                                {statMetrics.map((metric) => (
+                                    <div key={metric.label} className="metric-card compact">
+                                      <p className="metric-label">{metric.label}</p>
+                                      <p className="metric-value">{metric.value}</p>
+                                    </div>
+                                ))}
+                              </div>
+                            </div>
+                        )}
+                      </div>
+                  )}
+                </section>
+            )}
+          </>
       )}
 
       {matchesToDisplay.length > 0 && (
-        <section className="panel">
-          <p className="eyebrow">Recent matches</p>
-          <ul className="match-list">
-            {matchesToDisplay.map((match, index) => {
-              const title = match.map || match.mapName || match.name || match.match || `Match ${index + 1}`;
-              const result = match.result || match.outcome || match.matchResult;
-              const kd = match.kd || match.kdRatio || match.killsDeaths;
-              const rating = match.rating || match.leetifyRating || match.score;
-              return (
-                <li key={match.id || match.matchId || index} className="match">
+          <section className="panel">
+            <p className="eyebrow">Recent matches</p>
+            <ul className="match-list">
+              {matchesToDisplay.map((match, index) => {
+                const title = match.map || match.mapName || match.name || match.match || `Match ${index + 1}`;
+                const result = match.result || match.outcome || match.matchResult;
+                const kd = match.kd || match.kdRatio || match.killsDeaths;
+                const rating = match.rating || match.leetifyRating || match.score;
+                return (
+                    <li key={match.id || match.matchId || index} className="match">
                   <div>
                     <p className="match-title">{title}</p>
                     <p className="match-meta">
