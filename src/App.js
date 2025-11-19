@@ -35,6 +35,19 @@ const formatDate = (value) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const clampScore = (value) => Math.max(0, Math.min(100, value));
 const resolveSusLevel = (score) => {
   if (score >= 75) return 'alert';
@@ -422,7 +435,13 @@ function App() {
   }, [integritySignals]);
 
   const bans = useMemo(() => ({
-    list: Array.isArray(playerData?.bans) ? playerData.bans : [],
+    list: Array.isArray(playerData?.bans)
+      ? playerData.bans.map((ban) => ({
+          platform: ban.platform || 'Unknown',
+          nickname: ban.platform_nickname || '—',
+          bannedSince: formatDateTime(ban.banned_since),
+        }))
+      : [],
     count: Array.isArray(playerData?.bans) ? playerData.bans.length : 0,
   }), [playerData]);
 
@@ -541,6 +560,28 @@ function App() {
                   <div>
                     <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
                     <p>Review the raw payload below for ban details before trusting this account.</p>
+                    {bans.list.length > 0 && (
+                        <div className="table-wrapper">
+                          <table className="ban-table">
+                            <thead>
+                            <tr>
+                              <th>Platform</th>
+                              <th>Nickname</th>
+                              <th>Banned since</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {bans.list.map((ban, index) => (
+                                <tr key={`${ban.platform}-${ban.bannedSince}-${index}`}>
+                                  <td>{friendlyLabel(ban.platform)}</td>
+                                  <td>{ban.nickname}</td>
+                                  <td>{ban.bannedSince}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                          </table>
+                        </div>
+                    )}
                   </div>
               ) : (
                   <div>
