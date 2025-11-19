@@ -333,12 +333,53 @@ const buildVanityResolverUrls = (vanity) => {
   return [...new Set(urls)];
 };
 
+const buildSteamXmlProfileUrls = (slug, mode = 'id') => {
+  if (!slug) return [];
+  const normalizedMode = mode === 'profiles' ? 'profiles' : 'id';
+  const encodedSlug = encodeURIComponent(slug);
+  const baseUrl = `https://steamcommunity.com/${normalizedMode}/${encodedSlug}?xml=1`;
+  return [...new Set([baseUrl, `https://r.jina.ai/${baseUrl}`, `https://cors.isomorphic-git.org/${baseUrl}`])];
+};
+
+const parseSteamIdFromXml = (payload = '') => {
+  if (!payload) return null;
+  const match = payload.match(/<steamID64>(\d{17})<\/steamID64>/i);
+  return match ? match[1] : null;
+};
+
+const resolveSteamIdViaXml = async (slug) => {
+  if (!slug) return null;
+  const candidates = buildSteamXmlProfileUrls(slug, 'id');
+  for (const endpoint of candidates) {
+    try {
+      const response = await fetch(endpoint, { headers: { Accept: 'application/xml,text/xml,*/*' } });
+      if (!response.ok) {
+        continue;
+      }
+      const text = await response.text();
+      const steamId = parseSteamIdFromXml(text);
+      if (steamId) {
+        return steamId;
+      }
+    } catch (error) {
+      // Ignore fetch/parsing errors and fall through to the next candidate.
+    }
+  }
+  return null;
+};
+
 const resolveVanitySteamId = async (vanity) => {
   if (!vanity) return null;
-  const normalized = vanity.trim();
+  const normalized = vanity.trim().replace(/^\/+/, '').replace(/\/+$/, '');
   if (!normalized) return null;
   if (VANITY_CACHE.has(normalized)) {
     return VANITY_CACHE.get(normalized);
+  }
+
+  const xmlResolved = await resolveSteamIdViaXml(normalized);
+  if (xmlResolved) {
+    VANITY_CACHE.set(normalized, xmlResolved);
+    return xmlResolved;
   }
 
   const candidates = buildVanityResolverUrls(normalized);
