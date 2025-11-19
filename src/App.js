@@ -175,25 +175,60 @@ const getBasePath = () => {
   return base === '/' ? '' : base;
 };
 
-const parseSteamIdFromPath = () => {
+const parseSteamSourceFromPath = () => {
   const base = getBasePath();
   let relativePath = window.location.pathname;
-  if (base && relativePath.startsWith(`/${base}`)) {
-    relativePath = relativePath.slice(base.length + 1);
+  if (base) {
+    const normalizedBase = `/${base}`.replace(/\/+/g, '/').replace(/\/$/, '');
+    if (relativePath.startsWith(normalizedBase)) {
+      relativePath = relativePath.slice(normalizedBase.length);
+    }
   }
-  if (base && !relativePath.startsWith('/') && window.location.pathname.startsWith(base)) {
-    relativePath = window.location.pathname.slice(base.length);
+  relativePath = relativePath.replace(/^\/+|\/+$/g, '');
+  if (!relativePath) {
+    return { steamId: '', vanity: '', prefill: '' };
   }
-  return relativePath.replace(/^\/+|\/+$/g, '');
+
+  const [firstRaw, secondRaw] = relativePath.split('/');
+  const first = decodeSegment(firstRaw || '');
+  const second = decodeSegment(secondRaw || '');
+
+  if (first.toLowerCase() === 'profiles' && second) {
+    if (STEAM_ID_REGEX.test(second)) {
+      return { steamId: second, vanity: '', prefill: second };
+    }
+    return { steamId: '', vanity: second, prefill: second };
+  }
+
+  if (first.toLowerCase() === 'id' && second) {
+    if (STEAM_ID_REGEX.test(second)) {
+      return { steamId: second, vanity: '', prefill: second };
+    }
+    return { steamId: '', vanity: second, prefill: second };
+  }
+
+  if (STEAM_ID_REGEX.test(first)) {
+    return { steamId: first, vanity: '', prefill: first };
+  }
+
+  if (first) {
+    return { steamId: '', vanity: first, prefill: first };
+  }
+
+  return { steamId: '', vanity: '', prefill: '' };
 };
 
 const updatePathWithSteamId = (steamId) => {
   const base = getBasePath();
   const segments = [''];
   if (base) segments.push(base);
-  if (steamId) segments.push(steamId);
-  const nextPath = segments.join('/').replace(/\/+/g, '/');
-  window.history.replaceState({}, '', nextPath || '/');
+  if (steamId) {
+    segments.push('profiles', steamId);
+  }
+  const nextPath = segments.join('/').replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+  if (window.location.pathname !== nextPath) {
+    window.history.replaceState({}, '', nextPath);
+  }
 };
 
 const findValue = (data, paths) => {
@@ -259,7 +294,7 @@ const decodeSegment = (segment) => {
 
 const extractVanitySegment = (value = '') => {
   if (!value) return null;
-  const vanityUrlMatch = value.match(/steamcommunity\.com\/(?:id|profiles)\/([^/?#]+)/i);
+  const vanityUrlMatch = value.match(/\/(?:id|profiles)\/([^/?#]+)/i);
   if (vanityUrlMatch) {
     const [, segment] = vanityUrlMatch;
     if (!STEAM_ID_REGEX.test(segment)) {
@@ -327,8 +362,10 @@ const resolveVanitySteamId = async (vanity) => {
 };
 
 function App() {
-  const [steamIdInput, setSteamIdInput] = useState(() => parseSteamIdFromPath());
-  const [activeSteamId, setActiveSteamId] = useState(() => parseSteamIdFromPath());
+  const initialRoute = useMemo(() => parseSteamSourceFromPath(), []);
+  const [steamIdInput, setSteamIdInput] = useState(initialRoute.prefill);
+  const [activeSteamId, setActiveSteamId] = useState(initialRoute.steamId);
+  const [pendingVanity, setPendingVanity] = useState(initialRoute.vanity);
   const [playerData, setPlayerData] = useState(null);
   const [recentMatches, setRecentMatches] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -336,9 +373,33 @@ function App() {
   const [showMechanics, setShowMechanics] = useState(false);
 
   useEffect(() => {
-    setSteamIdInput(activeSteamId);
+    if (activeSteamId) {
+      setSteamIdInput(activeSteamId);
+    }
     updatePathWithSteamId(activeSteamId);
   }, [activeSteamId]);
+
+  useEffect(() => {
+    if (!pendingVanity || activeSteamId) return undefined;
+    let cancelled = false;
+    const resolveVanity = async () => {
+      const resolved = await resolveVanitySteamId(pendingVanity);
+      if (cancelled) return;
+      if (resolved) {
+        setActiveSteamId(resolved);
+        setError('');
+      } else {
+        setError(`Unable to resolve Steam vanity "${pendingVanity}".`);
+        setPlayerData(null);
+        setRecentMatches([]);
+      }
+      setPendingVanity('');
+    };
+    resolveVanity();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingVanity, activeSteamId]);
 
   useEffect(() => {
     if (!activeSteamId) {
@@ -563,8 +624,8 @@ function App() {
           <p className="eyebrow">Leetify API powered</p>
           <h1>Steam integrity scanner</h1>
           <p>
-            Drop a Steam ID in the URL (<code>/{'{steam64_id}'}</code>) and we will pull every public Leetify signal so you can
-            spot suspicious performance spikes before queueing.
+            Drop a Steam ID in the URL (<code>/profiles/{'{steam64_id}'}</code>) or swap a Steam Community link to your domain
+            and we will pull every public Leetify signal so you can spot suspicious performance spikes before queueing.
           </p>
         </div>
       </header>
@@ -586,8 +647,9 @@ function App() {
             </button>
           </div>
           <p className="help-text">
-            Tip: navigate straight to <code>/{'{steamId}'}</code> after deploying and the page will fetch automatically so you
-            can share "is this guy legit?" links.
+            Tip: change <code>steamcommunity.com</code> to your deployment host for links like
+            <code>/profiles/{'{steam64_id}'}</code> or <code>/id/{'{vanity}'}</code> and the page will resolve and fetch
+            automatically.
           </p>
         </form>
       </section>
