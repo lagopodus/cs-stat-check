@@ -35,6 +35,19 @@ const formatDate = (value) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const clampScore = (value) => Math.max(0, Math.min(100, value));
 const resolveSusLevel = (score) => {
   if (score >= 75) return 'alert';
@@ -162,25 +175,60 @@ const getBasePath = () => {
   return base === '/' ? '' : base;
 };
 
-const parseSteamIdFromPath = () => {
+const parseSteamSourceFromPath = () => {
   const base = getBasePath();
   let relativePath = window.location.pathname;
-  if (base && relativePath.startsWith(`/${base}`)) {
-    relativePath = relativePath.slice(base.length + 1);
+  if (base) {
+    const normalizedBase = `/${base}`.replace(/\/+/g, '/').replace(/\/$/, '');
+    if (relativePath.startsWith(normalizedBase)) {
+      relativePath = relativePath.slice(normalizedBase.length);
+    }
   }
-  if (base && !relativePath.startsWith('/') && window.location.pathname.startsWith(base)) {
-    relativePath = window.location.pathname.slice(base.length);
+  relativePath = relativePath.replace(/^\/+|\/+$/g, '');
+  if (!relativePath) {
+    return { steamId: '', vanity: '', prefill: '' };
   }
-  return relativePath.replace(/^\/+|\/+$/g, '');
+
+  const [firstRaw, secondRaw] = relativePath.split('/');
+  const first = decodeSegment(firstRaw || '');
+  const second = decodeSegment(secondRaw || '');
+
+  if (first.toLowerCase() === 'profiles' && second) {
+    if (STEAM_ID_REGEX.test(second)) {
+      return { steamId: second, vanity: '', prefill: second };
+    }
+    return { steamId: '', vanity: second, prefill: second };
+  }
+
+  if (first.toLowerCase() === 'id' && second) {
+    if (STEAM_ID_REGEX.test(second)) {
+      return { steamId: second, vanity: '', prefill: second };
+    }
+    return { steamId: '', vanity: second, prefill: second };
+  }
+
+  if (STEAM_ID_REGEX.test(first)) {
+    return { steamId: first, vanity: '', prefill: first };
+  }
+
+  if (first) {
+    return { steamId: '', vanity: first, prefill: first };
+  }
+
+  return { steamId: '', vanity: '', prefill: '' };
 };
 
 const updatePathWithSteamId = (steamId) => {
   const base = getBasePath();
   const segments = [''];
   if (base) segments.push(base);
-  if (steamId) segments.push(steamId);
-  const nextPath = segments.join('/').replace(/\/+/g, '/');
-  window.history.replaceState({}, '', nextPath || '/');
+  if (steamId) {
+    segments.push('profiles', steamId);
+  }
+  const nextPath = segments.join('/').replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+  if (window.location.pathname !== nextPath) {
+    window.history.replaceState({}, '', nextPath);
+  }
 };
 
 const findValue = (data, paths) => {
@@ -228,9 +276,137 @@ const buildLeetifyUrl = (steamId) => {
   return `https://api-public.cs-prod.leetify.com/v3/profile?steam64_id=${encode(steamId)}`;
 };
 
+const STEAM_ID_REGEX = /\b\d{17}\b/;
+
+const extractSteamId = (value = '') => {
+  if (!value) return null;
+  const match = value.match(STEAM_ID_REGEX);
+  return match ? match[0] : null;
+};
+
+const decodeSegment = (segment) => {
+  try {
+    return decodeURIComponent(segment);
+  } catch (error) {
+    return segment;
+  }
+};
+
+const extractVanitySegment = (value = '') => {
+  if (!value) return null;
+  const vanityUrlMatch = value.match(/\/(?:id|profiles)\/([^/?#]+)/i);
+  if (vanityUrlMatch) {
+    const [, segment] = vanityUrlMatch;
+    if (!STEAM_ID_REGEX.test(segment)) {
+      return decodeSegment(segment);
+    }
+  }
+  const trimmed = value.trim();
+  if (trimmed && /^[a-zA-Z0-9_-]+$/.test(trimmed) && !STEAM_ID_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+};
+
+const VANITY_CACHE = new Map();
+
+const buildVanityResolverUrls = (vanity) => {
+  const encoded = encodeURIComponent(vanity);
+  const urls = [];
+  const configured = (process.env.REACT_APP_STEAM_VANITY_RESOLVER || '').trim();
+
+  if (configured) {
+    if (configured.includes('{vanity}')) {
+      urls.push(configured.replace('{vanity}', encoded));
+    } else {
+      const hasQuery = configured.includes('?');
+      const needsAmpersand = hasQuery && !configured.endsWith('?') && !configured.endsWith('&');
+      const separator = hasQuery ? (needsAmpersand ? '&' : '') : '?';
+      urls.push(`${configured}${separator}vanityurl=${encoded}`);
+    }
+  }
+
+  urls.push(`https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encoded}`);
+  urls.push(`https://r.jina.ai/https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encoded}`);
+  urls.push(`https://cors.isomorphic-git.org/https://steamcommunity.com/actions/ajaxresolvevanityurl/?vanityurl=${encoded}`);
+
+  return [...new Set(urls)];
+};
+
+const buildSteamXmlProfileUrls = (slug, mode = 'id') => {
+  if (!slug) return [];
+  const normalizedMode = mode === 'profiles' ? 'profiles' : 'id';
+  const encodedSlug = encodeURIComponent(slug);
+  const baseUrl = `https://steamcommunity.com/${normalizedMode}/${encodedSlug}?xml=1`;
+  return [...new Set([baseUrl, `https://r.jina.ai/${baseUrl}`, `https://cors.isomorphic-git.org/${baseUrl}`])];
+};
+
+const parseSteamIdFromXml = (payload = '') => {
+  if (!payload) return null;
+  const match = payload.match(/<steamID64>(\d{17})<\/steamID64>/i);
+  return match ? match[1] : null;
+};
+
+const resolveSteamIdViaXml = async (slug) => {
+  if (!slug) return null;
+  const candidates = buildSteamXmlProfileUrls(slug, 'id');
+  for (const endpoint of candidates) {
+    try {
+      const response = await fetch(endpoint, { headers: { Accept: 'application/xml,text/xml,*/*' } });
+      if (!response.ok) {
+        continue;
+      }
+      const text = await response.text();
+      const steamId = parseSteamIdFromXml(text);
+      if (steamId) {
+        return steamId;
+      }
+    } catch (error) {
+      // Ignore fetch/parsing errors and fall through to the next candidate.
+    }
+  }
+  return null;
+};
+
+const resolveVanitySteamId = async (vanity) => {
+  if (!vanity) return null;
+  const normalized = vanity.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!normalized) return null;
+  if (VANITY_CACHE.has(normalized)) {
+    return VANITY_CACHE.get(normalized);
+  }
+
+  const xmlResolved = await resolveSteamIdViaXml(normalized);
+  if (xmlResolved) {
+    VANITY_CACHE.set(normalized, xmlResolved);
+    return xmlResolved;
+  }
+
+  const candidates = buildVanityResolverUrls(normalized);
+  for (const endpoint of candidates) {
+    try {
+      const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        continue;
+      }
+      const payload = await response.json();
+      if (payload?.success === 1 && payload?.steamid) {
+        VANITY_CACHE.set(normalized, payload.steamid);
+        return payload.steamid;
+      }
+    } catch (error) {
+      // Ignore and try the next resolver.
+    }
+  }
+
+  return null;
+};
+
 function App() {
-  const [steamIdInput, setSteamIdInput] = useState(() => parseSteamIdFromPath());
-  const [activeSteamId, setActiveSteamId] = useState(() => parseSteamIdFromPath());
+  const initialRoute = useMemo(() => parseSteamSourceFromPath(), []);
+  const [steamIdInput, setSteamIdInput] = useState(initialRoute.prefill);
+  const [activeSteamId, setActiveSteamId] = useState(initialRoute.steamId);
+  const [pendingVanity, setPendingVanity] = useState(initialRoute.vanity);
   const [playerData, setPlayerData] = useState(null);
   const [recentMatches, setRecentMatches] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -238,9 +414,33 @@ function App() {
   const [showMechanics, setShowMechanics] = useState(false);
 
   useEffect(() => {
-    setSteamIdInput(activeSteamId);
+    if (activeSteamId) {
+      setSteamIdInput(activeSteamId);
+    }
     updatePathWithSteamId(activeSteamId);
   }, [activeSteamId]);
+
+  useEffect(() => {
+    if (!pendingVanity || activeSteamId) return undefined;
+    let cancelled = false;
+    const resolveVanity = async () => {
+      const resolved = await resolveVanitySteamId(pendingVanity);
+      if (cancelled) return;
+      if (resolved) {
+        setActiveSteamId(resolved);
+        setError('');
+      } else {
+        setError(`Unable to resolve Steam vanity "${pendingVanity}".`);
+        setPlayerData(null);
+        setRecentMatches([]);
+      }
+      setPendingVanity('');
+    };
+    resolveVanity();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingVanity, activeSteamId]);
 
   useEffect(() => {
     if (!activeSteamId) {
@@ -422,14 +622,40 @@ function App() {
   }, [integritySignals]);
 
   const bans = useMemo(() => ({
-    list: Array.isArray(playerData?.bans) ? playerData.bans : [],
+    list: Array.isArray(playerData?.bans)
+      ? playerData.bans.map((ban) => ({
+          platform: ban.platform || 'Unknown',
+          nickname: ban.platform_nickname || '—',
+          bannedSince: formatDateTime(ban.banned_since),
+        }))
+      : [],
     count: Array.isArray(playerData?.bans) ? playerData.bans.length : 0,
   }), [playerData]);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const trimmed = steamIdInput.trim();
-    setActiveSteamId(trimmed);
+    if (!trimmed) return;
+    setError('');
+
+    const regexMatch = extractSteamId(trimmed);
+    if (regexMatch) {
+      setActiveSteamId(regexMatch);
+      return;
+    }
+
+    const vanitySegment = extractVanitySegment(trimmed);
+    if (vanitySegment) {
+      const resolved = await resolveVanitySteamId(vanitySegment);
+      if (resolved) {
+        setActiveSteamId(resolved);
+        return;
+      }
+    }
+
+    setError('Unable to extract a 64-bit Steam ID. Paste a direct ID or Steam profile URL.');
+    setPlayerData(null);
+    setRecentMatches([]);
   };
 
   return (
@@ -439,21 +665,21 @@ function App() {
           <p className="eyebrow">Leetify API powered</p>
           <h1>Steam integrity scanner</h1>
           <p>
-            Drop a Steam ID in the URL (<code>/{'{steam64_id}'}</code>) and we will pull every public Leetify signal so you can
-            spot suspicious performance spikes before queueing.
+            Drop a Steam ID in the URL (<code>/profiles/{'{steam64_id}'}</code>) or swap a Steam Community link to your domain
+            and we will pull every public Leetify signal so you can spot suspicious performance spikes before queueing.
           </p>
         </div>
       </header>
 
       <section className="panel">
         <form className="lookup-form" onSubmit={handleSubmit}>
-          <label htmlFor="steamId">Steam ID (64-bit)</label>
+          <label htmlFor="steamId">Steam ID (64-bit) or Steam profile URL</label>
           <div className="input-row">
             <input
               id="steamId"
               name="steamId"
               type="text"
-              placeholder="7656119..."
+              placeholder="7656119... or https://steamcommunity.com/id/..."
               value={steamIdInput}
               onChange={(event) => setSteamIdInput(event.target.value)}
             />
@@ -462,8 +688,9 @@ function App() {
             </button>
           </div>
           <p className="help-text">
-            Tip: navigate straight to <code>/{'{steamId}'}</code> after deploying and the page will fetch automatically so you
-            can share "is this guy legit?" links.
+            Tip: change <code>steamcommunity.com</code> to your deployment host for links like
+            <code>/profiles/{'{steam64_id}'}</code> or <code>/id/{'{vanity}'}</code> and the page will resolve and fetch
+            automatically.
           </p>
         </form>
       </section>
@@ -541,6 +768,28 @@ function App() {
                   <div>
                     <h3>{bans.count} ban{bans.count > 1 ? 's' : ''} reported</h3>
                     <p>Review the raw payload below for ban details before trusting this account.</p>
+                    {bans.list.length > 0 && (
+                        <div className="table-wrapper">
+                          <table className="ban-table">
+                            <thead>
+                            <tr>
+                              <th>Platform</th>
+                              <th>Nickname</th>
+                              <th>Banned since</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {bans.list.map((ban, index) => (
+                                <tr key={`${ban.platform}-${ban.bannedSince}-${index}`}>
+                                  <td>{friendlyLabel(ban.platform)}</td>
+                                  <td>{ban.nickname}</td>
+                                  <td>{ban.bannedSince}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                          </table>
+                        </div>
+                    )}
                   </div>
               ) : (
                   <div>

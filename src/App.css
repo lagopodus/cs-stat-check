@@ -205,6 +205,15 @@ code {
   background: rgba(248, 113, 113, 0.08);
 }
 
+.ban-table th,
+.ban-table td {
+  white-space: nowrap;
+}
+
+.ban-table td:nth-child(2) {
+  white-space: normal;
+}
+
 .signal-grid {
   display: grid;
   gap: 1rem;
